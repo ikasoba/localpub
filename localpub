@@ -5,7 +5,7 @@ if [ -z "$Scriptfile" ]; then
 fi
 
 __conf_name=""
-__conf_file="localpub.conf"
+__conf_file="Localpubfile"
 __conf_port=8013
 __conf_dest=".localpub"
 
@@ -29,7 +29,7 @@ Version() {
 }
 
 GenerateMisskeyConf() {
-  echo "url: http://${__conf_name}${__conf_atom_id}.localhost"
+  echo "url: https://${__conf_name}${__conf_atom_id}.local"
   echo "port: 80"
   echo "db:"
   echo "  host: db"
@@ -113,7 +113,7 @@ GenerateNginxConfTail() {
 GenerateNginxConf() {
   echo "  server {"
   echo "    listen 80;"
-  echo "    server_name ${__conf_name}${__conf_atom_id}.localhost ${__conf_name}${__conf_atom_id}.local;"
+  echo "    server_name ${__conf_name}${__conf_atom_id}.local;"
   echo "    location / {"
   echo "      proxy_pass http://${__conf_name}${__conf_atom_id}:80;"
   echo "      proxy_set_header Host ${__conf_name}${__conf_atom_id}.local;"
@@ -191,8 +191,6 @@ BeginConfiguration() {
   mkdir -p $__conf_dest/pg_init
   mkdir -p $__conf_dest/cert
 
-  cp $(dirname $ScriptFile)/monitor.Dockerfile $__conf_dest/Dockerfile
-
   GenerateRootCert
 
   GenerateComposeHead > $__conf_dest/compose.yaml
@@ -215,9 +213,6 @@ EndDecl() {
   echo "  Image: ${__conf_atom_image}"
   echo "  Version: ${__conf_atom_version}"
 
-  mkdir -p $__conf_dest/files${__conf_atom_id}
-  chmod -R 777 $__conf_dest/files${__conf_atom_id}
-  
   GenerateServerCert
   
   GenerateMisskeyConf >> $__conf_dest/${__conf_atom_id}.yml
@@ -271,6 +266,32 @@ GenerateServerCert() {
       -CAcreateserial \
       -passin pass:1234 \
       -out $__conf_dest/cert/cacert${__conf_atom_id}.crt
+}
+
+Help() {
+  cat << EOS
+localpub
+
+  ActivityPub network configuration generator for local environment.
+  Repository: https://github.com/ikasoba/localpub
+  
+Usage: localpub [-p <port>] [-f <localpubfile>] [-o <dest>] [-m (up|down)] [-h]
+
+  -p, --port:
+    Specify localpub port. (default: ${__conf_port})
+
+  -f, --file:
+    Specify Localpubfile. (default: ${__conf_file})
+
+  -o, --config-destination:
+    Specify output destination of configuration. (default: ${__conf_dest})
+
+  -m, --mode:
+    Specify docker compose command. (optional)
+
+  -h, --help:
+    Display this message.
+EOS
 }
 
 Main() {
@@ -327,6 +348,11 @@ Main() {
 
         i=$((i+1))
         ;;        
+
+      "-h" | "--help")
+        Help
+        exit
+        ;;
 
       *)
         echo "Error-Message: Invalid argument."
