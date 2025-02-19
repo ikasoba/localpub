@@ -1,0 +1,361 @@
+#!/bin/bash
+
+if [ -z "$Scriptfile" ]; then
+  ScriptFile=$0
+fi
+
+__conf_name=""
+__conf_file="localpub.conf"
+__conf_port=8013
+__conf_dest=".localpub"
+
+__conf_mode=""
+
+Name() {
+  __conf_name=$1
+}
+
+__conf_nginx_aliases=""
+__conf_atom_id=0
+__conf_atom_image=""
+__conf_atom_version=""
+
+Image() {
+  __conf_atom_image=$1
+}
+
+Version() {
+  __conf_atom_version=$1
+}
+
+GenerateMisskeyConf() {
+  echo "url: http://${__conf_name}${__conf_atom_id}.localhost"
+  echo "port: 80"
+  echo "db:"
+  echo "  host: db"
+  echo "  port: 5432"
+  echo "  db: db_${__conf_name}${__conf_atom_id}"
+  echo "  user: ${__conf_name}${__conf_atom_id}"
+  echo "  pass: \"1234\""
+  echo "dbReplications: false"
+  echo "redis:"
+  echo "  host: redis"
+  echo "  port: 6379"
+  echo "  prefix: ${__conf_name}${__conf_atom_id}"
+  echo "fulltextSearch:"
+  echo "  provider: sqlLike"
+  echo "id: aidx"
+  echo "proxyBypassHosts:"
+  echo "  - api.deepl.com"
+  echo "  - api-free.deepl.com"
+  echo "  - www.recaptcha.net"
+  echo "  - hcaptcha.com"
+  echo "  - challenges.cloudflare.com"
+  echo "proxyRemoteFiles: false"
+  echo "signToActivityPubGet: true"
+  echo "allowedPrivateNetworks:"
+  echo "  - 127.0.0.1/32"
+  echo "  - 172.20.0.1/16"
+  echo "  - 172.21.0.1/16"
+}
+
+GenerateSqlInit() {
+  echo "CREATE USER \"${__conf_name}${__conf_atom_id}\" WITH PASSWORD '1234';"
+  echo "CREATE DATABASE \"db_${__conf_name}${__conf_atom_id}\" OWNER \"${__conf_name}${__conf_atom_id}\";"
+}
+
+GenerateComposeHead() {
+  echo "services:"
+  echo "  monitor:"
+  echo "    image: linuxserver/firefox"
+  echo "    ports:"
+  echo "      - 3000:3000"
+  echo "    volumes:"
+  echo "      - type: bind"
+  echo "        source: cert/root_cacert.crt"
+  echo "        target: /etc/ssl/certs/root_cacert.crt"
+  echo "      - type: bind"
+  echo "        source: cert/root_cacert.crt"
+  echo "        target: /etc/ssl/certs/root_cacert.crt"
+  echo "  db:"
+  echo "    image: postgres:15-alpine"
+  echo "    environment:"
+  echo "      - POSTGRES_PASSWORD=dummy"
+  echo "    volumes:"
+  echo "      - ./pg_data:/var/lib/postgresql/data/"
+  echo "      - ./pg_init:/docker-entrypoint-initdb.d/"
+  echo "  redis:"
+  echo "    image: redis:7-alpine"
+  echo "    healthcheck:"
+  echo "      test: \"redis-cli ping\""
+  echo "      interval: 5s"
+  echo "      retries: 20"
+}
+
+GenerateNginxConfHead() {
+  echo "events {"
+  echo "  worker_connections 1024;"
+  echo "}"
+  echo "worker_processes auto;"
+  echo "http {"
+  echo "  map \$http_upgrade \$connection_upgrade {"
+  echo "    default upgrade;"
+  echo "    '' close;"
+  echo "  }"
+  echo "  ssl_session_cache shared:SSL:10m;"
+  echo "  ssl_session_timeout 10m;"
+}
+
+GenerateNginxConfTail() {
+  echo "}"
+}
+
+GenerateNginxConf() {
+  echo "  server {"
+  echo "    listen 80;"
+  echo "    server_name ${__conf_name}${__conf_atom_id}.localhost ${__conf_name}${__conf_atom_id}.local;"
+  echo "    location / {"
+  echo "      proxy_pass http://${__conf_name}${__conf_atom_id}:80;"
+  echo "      proxy_set_header Host ${__conf_name}${__conf_atom_id}.local;"
+  echo "      proxy_http_version 1.1;"
+  echo "      proxy_set_header X-Real-IP \$remote_addr;"
+  echo "      proxy_set_header Upgrade \$http_upgrade;"
+	echo "      proxy_set_header Connection \$connection_upgrade;"
+  echo "    }"
+  echo "  }"
+  echo "  server {"
+  echo "    listen 443 ssl;"
+  echo "    http2 on;"
+  echo "    server_name ${__conf_name}${__conf_atom_id}.local;"
+  echo "    ssl_trusted_certificate /etc/nginx/certificates/root_cacert.crt;"
+  echo "    ssl_certificate /etc/nginx/certificates/cacert${__conf_atom_id}.crt;"
+  echo "    ssl_certificate_key /etc/nginx/certificates/cakey${__conf_atom_id}.pem;"
+  echo "    ssl_password_file /etc/nginx/certificates/pass;"
+  echo "    ssl_protocols TLSv1.2 TLSv1.3;"
+  echo "    ssl_ciphers HIGH:!aNULL:!MD5;"
+  echo "    keepalive_timeout 60;"
+  echo "    location / {"
+  echo "      proxy_pass http://${__conf_name}${__conf_atom_id}:80;"
+  echo "      proxy_set_header Host ${__conf_name}${__conf_atom_id}.local;"
+  echo "      proxy_http_version 1.1;"
+  echo "      proxy_set_header X-Real-IP \$remote_addr;"
+  echo "      proxy_set_header Upgrade \$http_upgrade;"
+	echo "      proxy_set_header Connection \$connection_upgrade;"
+  echo "    }"
+  echo "  }"
+}
+
+GenerateCompose() {
+  echo "  ${__conf_name}${__conf_atom_id}:"
+  echo "    image: ${__conf_atom_image}:${__conf_atom_version}"
+  echo "    environment:"
+  echo "      - NODE_TLS_REJECT_UNAUTHORIZED=0"
+  echo "    volumes:"
+  echo "      - type: bind"
+  echo "        source: ${__conf_atom_id}.yml"
+  echo "        target: /misskey/.config/default.yml"
+  echo "      - ./files${__conf_atom_id}/:/misskey/files/"
+  echo "      - type: bind"
+  echo "        source: cert/root_cacert.crt"
+  echo "        target: /usr/local/share/ca-certificates/root_cacert.crt"
+  echo "      - type: bind"
+  echo "        source: cert/root_cacert.crt"
+  echo "        target: /etc/ssl/certs/ca-certificates.crt"
+  echo "    depends_on:"
+  echo "      - db"
+  echo "      - redis"
+}
+
+GenerateComposeTail() {
+  echo "  nginx:"
+  echo "    image: nginx:alpine3.21"
+  echo "    ports:"
+  echo "      - ${__conf_port}:80"
+  echo "    volumes:"
+  echo "      - type: bind"
+  echo "        source: nginx.conf"
+  echo "        target: /etc/nginx/nginx.conf"
+  echo "      - type: bind"
+  echo "        source: cert/"
+  echo "        target: /etc/nginx/certificates/"
+  echo "    networks:"
+  echo "      default:"
+  echo "        aliases:"
+  for alias in $__conf_nginx_aliases; do
+  echo "          - $alias"
+  done
+}
+
+BeginConfiguration() {
+  mkdir -p $__conf_dest
+  mkdir -p $__conf_dest/pg_init
+  mkdir -p $__conf_dest/cert
+
+  cp $(dirname $ScriptFile)/monitor.Dockerfile $__conf_dest/Dockerfile
+
+  GenerateRootCert
+
+  GenerateComposeHead > $__conf_dest/compose.yaml
+  GenerateNginxConfHead > $__conf_dest/nginx.conf
+}
+
+EndConfiguration() {
+  GenerateComposeTail >> $__conf_dest/compose.yaml
+  GenerateNginxConfTail >> $__conf_dest/nginx.conf
+}
+
+BeginDecl() {
+  echo "Declare ${__conf_atom_id}:"
+
+  echo -n "" > $__conf_dest/${__conf_atom_id}.yml
+  echo -n "" > $__conf_dest/pg_init/${__conf_atom_id}.sql
+}
+
+EndDecl() {
+  echo "  Image: ${__conf_atom_image}"
+  echo "  Version: ${__conf_atom_version}"
+
+  mkdir -p $__conf_dest/files${__conf_atom_id}
+  chmod -R 777 $__conf_dest/files${__conf_atom_id}
+  
+  GenerateServerCert
+  
+  GenerateMisskeyConf >> $__conf_dest/${__conf_atom_id}.yml
+  GenerateNginxConf >> $__conf_dest/nginx.conf
+  GenerateSqlInit >> $__conf_dest/pg_init/${__conf_atom_id}.sql
+  GenerateCompose >> $__conf_dest/compose.yaml
+
+  if [ ! -z "$__conf_nginx_aliases" ]; then
+    __conf_nginx_aliases="$__conf_nginx_aliases example${__conf_atom_id}.local"
+  else
+    __conf_nginx_aliases="example${__conf_atom_id}.local"
+  fi
+
+  __conf_atom_id=$((__conf_atom_id+1))
+}
+
+SaveConfig() {
+  printf "ScriptFile=%q;" $ScriptFile
+  printf "__conf_file=%q;" $__conf_file
+  printf "__conf_port=%q;" $__conf_port
+  printf "__conf_dest=%q" $__conf_dest
+}
+
+DoGeneration() {
+  $SHELL -c "__conf_imported=1; . $ScriptFile; $(SaveConfig); BeginConfiguration; . $__conf_file; EndConfiguration"
+}
+
+GenerateRootCert() {
+  echo "1234" > $__conf_dest/cert/pass
+  
+  [ ! -f $__conf_dest/cert/root_cakey.pem ] &&
+    openssl genrsa -des3 -passout pass:1234 -out $__conf_dest/cert/root_cakey.pem 4096
+    
+  [ ! -f $__conf_dest/cert/root_cacert.crt ] &&
+    openssl req -x509 -new -nodes -batch -sha256 -days 365 -passin pass:1234 -key $__conf_dest/cert/root_cakey.pem -out $__conf_dest/cert/root_cacert.crt
+}
+
+GenerateServerCert() {
+  [ ! -f $__conf_dest/cert/cakey${__conf_atom_id}.pem ] &&
+    openssl genrsa -des3 -passout pass:1234 -out $__conf_dest/cert/cakey${__conf_atom_id}.pem 4096
+    
+  [ ! -f $__conf_dest/cert/cacert${__conf_atom_id}.csr ] &&
+    openssl req -new -passin pass:1234 -key $__conf_dest/cert/cakey${__conf_atom_id}.pem -subj "/CN=${__conf_name}${__conf_atom_id}.local/C=JP/ST=/L=/O=LocalPub-CA/OU=LocalPub-CA" -out $__conf_dest/cert/cacert${__conf_atom_id}.csr
+
+  [ ! -f $__conf_dest/cert/cacert${__conf_atom_id}.crt ] &&
+    openssl x509 -req -sha256 \
+      -days 365 \
+      -in $__conf_dest/cert/cacert${__conf_atom_id}.csr \
+      -CA $__conf_dest/cert/root_cacert.crt \
+      -CAkey $__conf_dest/cert/root_cakey.pem \
+      -CAcreateserial \
+      -passin pass:1234 \
+      -out $__conf_dest/cert/cacert${__conf_atom_id}.crt
+}
+
+Main() {
+  i=1
+  
+  while [ $i -le $# ]; do
+    arg=${@:i:1}
+    
+    case "$arg" in
+      "-p" | "--port")
+        if [ $((i+1)) -gt $# ]; then
+          echo "Error-Message: port number required."
+          echo "Argument-Position: $i"
+          exit 1
+        fi
+  
+        __conf_port=${@:$((i+1)):1}
+
+        i=$((i+1))
+        ;;
+        
+      "-f" | "--file")
+        if [ $((i+1)) -gt $# ]; then
+          echo "Error-Message: file path required."
+          echo "Argument-Position: $i"
+          exit 1
+        fi
+  
+        __conf_file=${@:$((i+1)):1}
+
+        i=$((i+1))
+        ;;
+
+      "-o" | "--config-destination")
+        if [ $((i+1)) -gt $# ]; then
+          echo "Error-Message: directory path required."
+          echo "Argument-Position: $i"
+          exit 1
+        fi
+  
+        __conf_dest=${@:$((i+1)):1}
+
+        i=$((i+1))
+        ;;        
+
+      "-m" | "--mode")
+        if [ $((i+1)) -gt $# ]; then
+          echo "Error-Message: mode kind required."
+          echo "Argument-Position: $i"
+          exit 1
+        fi
+  
+        __conf_mode=${@:$((i+1)):1}
+
+        i=$((i+1))
+        ;;        
+
+      *)
+        echo "Error-Message: Invalid argument."
+        echo "Argument-Position: $i"
+        exit 1
+        ;;
+    esac
+
+    i=$((i+1))
+  done
+
+  if [ -z "$__conf_file" ]; then
+    echo "Error-Message: Config file path required."
+    exit 1
+  fi
+
+  echo "config file: $__conf_file"
+  echo "port: $__conf_port"
+  echo ""
+
+  DoGeneration
+
+  if [ "$__conf_mode" = "up" ]; then
+    $SHELL -c "cd $__conf_dest; docker compose up --build"
+  elif [ "$__conf_mode" = "down" ]; then
+    $SHELL -c "cd $__conf_dest; docker compose down"
+  fi
+}
+
+if [ -z "$__conf_imported" ]; then
+  Main $@
+fi
